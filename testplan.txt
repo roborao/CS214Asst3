@@ -1,0 +1,6 @@
+For this assignment we tested our code by first creating different test files. We then ran our server code on one system
+and our client code on another. The client code would request to open close read and write these files that were stored 
+on the server side system. As such, our client tester code referenced our network open/close/read/write methods much the 
+same as if they had been local open/close/read/write methods. To test if our code was robust, we included empty files, as
+well as files that did not exist, and tried to close the same file multiple times. In all cases our code performed as 
+expected and we found no obvious errors. 
