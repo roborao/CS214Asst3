@@ -1,24 +1,10 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <ifaddrs.h>
-#include <fcntl.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <pthread.h>
-#include <errno.h>
-#include <signal.h>
-
-//structs
-typedef struct open_file_data{
-	FILE *fp;
-	int isActive;
-} Open_File_Data;
+//Macros
+#define PORT 54321 //hardcoded port
+#define BACKLOG 5 //queue size
 
 //functions
-void intHandler(int signum);
-int get_server_ip(char * ip_str);
+void *sigIntHandler(void* cli);
+void lopen(int socketFD);
+void lclose(int socketFD);
+void lread(int socketFD);
+void lwrite(int socketFD);

@@ -1,256 +1,177 @@
 #include "netfileserver.h"
 #include "libnetfiles.h"
 
-int bufferInfo[4] = 0;
+int bufferInfo[4] = {0};
+
+int socketFD;
 
 int netserverint(char * hostname){
 
-	// struct for socket address
-    	struct addrinfo info, *sv, *p;
-    	char s[INET6_ADDRSTRLEN]; 
-    	int fileDesc, flag;
-    	
-    	//memset to default zero value
-    	memset((char*)&info,0,sizeof(info));
-    	
-    	//IP, port types
-    	info.ai_family = AF_UNSPEC;           // IPv4 or IPv6
-    	info.ai_socktype = SOCK_STREAM;       // Sets as TCP
-    	
-    	// Automatically initialize the address information from host
-    	if ((flag = getaddrinfo(hostname, SERV_TCP_PORT_STR, &info, &sv)) != 0) {
-        	fprintf(stderr, "Client: %s\n", gai_strerror(flag));
-        	return -1;
-    	}
-    	
-    	 // Loop through server information for the appropriate address information to start a socket
-   	p = sv; 
-   	while(p != NULL){
-
-		fileDesc = socket(p->ai_family, p->ai_socktype, p->ai_protocol); //open socket
-		int svconnect = connect(fileDesc, p->ai_addr, p->ai_addrlen); //connect to server
-		
-       		
-       		if (fileDesc< 0) fprintf(stderr, "Client"); //socket could not be opened
-         
-       		else if (svconnect < 0) close(fileDesc); //close socjet
-      
-		else break; //successfully opened the socket and connected
-		
-       		p = p->ai_next;
-   	}
-   	
-   	// Get IP address from socket address
-   	inet_ntop(p->ai_family, getaddr((struct sockaddr *)p->ai_addr), s, sizeof(s));
-   	
-   	// clean info
-   	freeaddrinfo(sv);
-    	
-    	return fileDesc;
+	socketFD = socket(AF_INET, SOCK_STREAM, 0); //IPv4 connection
+	
+	if (socketFD<0){
+		fprintf(stderr, "client side: socket connection could not be established\n");
+		h_errno = HOST_NOT_FOUND;
+		return -1; //error
+	}
+	
+	struct sockaddr_in info;
+	memset(&info,0,sizeof(info)); //zero'd out structure
+	
+	info.sin_family = AF_INET; //IPv4 connetion 
+	info.sin_port = htons(PORT); //destination PORT in correct byte order
+	if (gethostbyname(hostname) != NULL) info.sin_addr.s_addr = *gethostbyname(hostname)->h_addr; //get and check host IP address
+	else{
+		fprintf(stderr, "client side: host address is invalid and could not be found\n");
+		h_errno = HOST_NOT_FOUND;
+		return -1; //error
+	}
+	
+	if (connect(socketFD,(struct sockaddr*)&info, sizeof(info)) == -1){
+		fprintf(stderr, "client side: could not bind to socket, connection could not be established successfully\n");
+		h_errno = HOST_NOT_FOUND;
+		return -1; //error
+	}
+	
+    	return 0; //success
 }	
 
-void * getaddr(struct sockaddr *addr){
+int netopen(const char* pathname, int flags){
+
+	//outbound talk to server to open file
+	char op = '0';
+	write(socketFD, &op, 1); //let server know client wants to open file
+
+	char flag;
+	ssize_t flagBytes;
+	switch(flags){
+		case 0: //O_RDONLY
+			flag = '0';
+			break;
+		case 1: //O_WRONLY
+			flag = '1';
+			break;
+		case 2: //O_RDWR
+			flag = '2';
+			break;
 	
-	if (addr->sa_family != AF_INET){
-		return &(((struct sockaddr_in6 *)addr)->sin6_addr);
 	}
+	write(socketFD, &flag, 1);
 	
-	else{
-		return &(((struct sockaddr_in*)addr)->sin_addr);
-	}
-}
+	write(socketFD, pathname, strlen(pathname)); //tell server pathname of file that is to be opened
 
+	//inbound talk from server	
+	char scs[5];
 
-void writeCommand(int s_fd, int type, int flag, int size, int status) {
-   	
-   	// Write in packet
-   	bufferInfo[0] = htonl(type);
-   	bufferInfo[1] = htonl(flag);
-   	bufferInfo[2] = htonl(size);
-   	bufferInfo[3] = htonl(status);
-   	writen(s_fd, (char *)&bufferInfo, 16);
-}
-    	
-void readCommandServer(int fileDesc, Command_packet * packet) {
-		
-   	// Read bytes
-   	readn(fileDesc, (char *)&bufferInfo, 16);
-  	packet->type = ntohl(bufferInfo[0]);
-   	packet->flag = ntohl(bufferInfo[1]);
-   	packet->size = ntohl(bufferInfo[2]);
-  	packet->status = ntohl(bufferInfo[3]);
-}
-
-void * readCommand(int fileDesc) {
-
-   	// Allocate memory for command packet struct
-   	Command_packet * packet = (Command_packet *)malloc(sizeof(Command_packet));
-   	
-   	// Read bytes
-  	readn(fileDesc, (char *)(&bufferInfo[0]), 16);
-  	packet->type = ntohl(bufferInfo[0]);
-  	packet->flag = ntohl(bufferInfo[1]);
-   	packet->size = ntohl(bufferInfo[2]);
-   	packet->status = ntohl(bufferInfo[3]);
-  
-   	return (void *)packet;
-}
-
-
-int readn(int fd, char * ptr, int nbytes) {
-  
-   	// Declare and initialize counters
-   	int nleft, nread;
-   	nleft = nbytes;
-   	
-   	// Loop through reading bytes until EOF is found
-   	while (nleft > 0) {
-       		nread = read(fd, ptr, nleft);
-
-		if (nread < 0) {           // Error
-           		return(nread);
-       		} else if (nread == 0) {   // EOF
-       	    		break;
-       		}
-      		nleft-=nread;
-       		ptr+=nread;
-   	}
-   	
-	// Return the number of bytes successfully read
-   	return (nbytes-nleft);
-}
-
-int writen(int fd, char* ptr, int nbytes){
-
-	//Declare and intialize counters
-	int nleft, nwritten;
-	nleft = nbytes;
+	read(socketFD, scs, 5);
 	
-	//Loop through and writing bytes until all bytes are written
-	while (nleft > 0){
-		nwritten = write(fd, ptr, nleft);
-		
-		if (nwritten <1){	//Error
-			return (nwritten);
+	if((scs[0]-'0')!=-1){
+		int i = 0;
+		char newdescrip[4];
+		for (i = 0; i < 4; i++){
+			newdescrip[i] = scs[i+1];
 		}
+		return atoi(newdescrip);
+	}
+	else{
+		int i = 0;
+		char err[4];
+		for (i = 0; i<4; i++){
+			err[i] = scs[i+1];
+		}
+		errno = atoi(err);
+		fprintf(stderr, "server side: could not open file: %s\n", strerror(errno));
+		return -1;
+	}
+	
+}
+
+int netclose(int fd) {
+
+	fd = -fd-2; //remap
+
+	//outbound talk to server to close file
+	char cl = '1';
+	write(socketFD, &cl, 1); //let server know client wants to close file
+	
+	char buffer[4];
+	sprintf(buffer, "%d", fd);
+	write(socketFD, buffer, 4); //send file descriptor
 		
-		nleft-=nwritten;
-		ptr+=nwritten;
+	//inbound talk from server 
+	char success[4];
+	read(socketFD, success, 4);
+	if (atoi(success)==0) return 0;
+	else{
+		errno = atoi(success);
+		fprintf(stderr, "could not close file: %s\n", strerror(errno));
+		return -1;
 	}
-	
-	//Return the number of bytes successfully written
-	return (nbytes-nleft);
 }
 
-int netopen(const char* pathname, int fileDesc, int flags){
+ssize_t netread(int fildes, void * buf, size_t nbyte) {
 
-	//Send command to server
-	writeCommand(fileDesc, 1, flags, strlen(pathname), 0);
-	
-	//Write filename to socket
-	errno = 0;
-	writen(fileDesc, (char*) pathname, strlen(pathname));
-	if (errno != 0){
-		fprintf(stderr, "Client");
-		errno = 0;
-	}
+	fildes = -fildes-2; //remap
 
-	//Recieve response from server
-	Command_packet * cPack = (Command_packet *)readCommand(fileDesc);
-	
-	//Get file descriptor index and free command packet
-	errno = cPack->flag;
-	int fd = cPack->status;
-	free(cPack);
-	
-	if (fd < 0){
-		fprintf(stderr, "Client");
-	}
-	
-	//Return file descriptor index recieved from server
-	return fd;
+   	//outbound talk to server to read file
+   	char rd = '2';
+   	write(socketFD, &rd, 1); //let server know client wants to read file
+   	
+   	char buffer[4];
+   	sprintf(buffer, "%d", fildes);
+   	write(socketFD, buffer, 4); //send file descriptor
+   	
+   	char byte[50];
+   	sprintf(byte, "%zd", nbyte);
+   	write(socketFD, byte, 1);
+   	
+   	//inbound talk from server
+   	char success[4];
+   	read(socketFD, success, 4);
+   	if (atoi(success)==0){
+   		read(socketFD, buf, nbyte);
+   		read(socketFD, byte, 4);
+   		return atoi(byte);		
+   	}
+   	else{
+		errno = atoi(success);
+		fprintf(stderr, "could not read file: %s\n", strerror(errno));
+		return -1;
+   	}
+   	
 }
 
-int netclose(int fileDesc, int fd) {
+ssize_t netwrite(int fildes, const void * buf, size_t nbyte) {
 
-   	// Send command to server
-   	writeCommand(fileDesc, 2, 0, 0, fd);
+	fildes = -fildes-2; //remap
 
-   	// Receive response from server
-   	Command_packet * cPack = (Command_packet *)readCommand(fileDesc);
-
-   	// Get status and free command packet
-   	errno = 0;
-   	errno = cPack->flag;
-   	int stat = cPack->status;
-   	free(cPack);
-
-   	if (stat < 0) {
-       		fprintf(stderr, "Client");
+	//outbound talk to server to read file
+   	char wr = '3';
+   	write(socketFD, &wr, 1); //let server know client wants to read file
+   	
+   	char buffer[4];
+   	sprintf(buffer, "%d", fildes);
+   	write(socketFD, buffer, 4); //send file descriptor
+   	
+   	char byte[50];
+   	sprintf(byte, "%zd", nbyte);
+   	write(socketFD, byte, 1);
+   	
+   	write(socketFD, buf, nbyte);
+   	
+   	//inbound talk from server
+   	char success[4];
+   	read(socketFD, success, 1);
+   	if (atoi(success)==0){
+   		read(socketFD, byte, 1);
+   		return atoi(byte);   		
+   	}
+   	else{
+		errno = atoi(success);
+		fprintf(stderr, "could not read file: %s\n", strerror(errno));
+		return -1;
    	}
 
-   	// Return status received from server
-   	return stat;
-}
-
-ssize_t netread(int fileDesc, int fd, void * buf, size_t nbyte) {
-
-   	// Send command to server
-   	writeCommand(fileDesc, 3, 0, nbyte, fd);
-
-   	// Read character into buffer
-   	errno = 0;
-   	readn(fileDesc, (char *)buf, nbyte);
-   	if (errno != 0) {
-       		fprintf(stderr, "Client");
-       		errno = 0;
-   	}
-
-   	// Receive response from server
-   	Command_packet * cPack = (Command_packet *)readCommand(fileDesc);
-
-   	// Get status and free command packet
-   	int size = cPack->size;
-   	errno = cPack->flag;
-   	free(cPack);
-
-   	// Check if the number of bytes read is correct
-   	if (size != nbyte) {
-       		fprintf(stderr, "Client");
-   	}
-
-   	// Return size of read from server
-   	return size;
-}
-
-ssize_t netwrite(int fileDesc, int fd, const void * buf, size_t nbyte) {
-
-	//Send command to server
-	writeCommand(fileDesc, 4, 0, nbyte, fd);
-	
-	//Send buffer to be written to server
-	errno = 0;
-	writen(fileDesc, (char*)buf, nbyte);
-	if (errno!=0){
-		fprintf(stderr, "Client");
-		errno = 0;
-	}
-	
-	//Receive response from server
-	Command_packet *cPack = (Command_packet *)readCommand(fileDesc);
-	
-	//get status and free command packet
-	int size = cPack->size;
-	errno = cPack->flag;
-	free(cPack);
-	
-	//check if number of bytes written is correct
-	if (size!=nbyte){
-		fprintf(stderr, "Client");
-	}
-	
-	//Return status received from server
-	return size;
 }
 
 
