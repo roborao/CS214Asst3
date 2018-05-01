@@ -43,7 +43,6 @@ int netopen(const char* pathname, int flags){
 	write(socketFD, &op, 1); //let server know client wants to open file
 
 	char flag;
-	ssize_t flagBytes;
 	switch(flags){
 		case 0: //O_RDONLY
 			flag = '0';
@@ -174,8 +173,10 @@ ssize_t netwrite(int fildes, const void * buf, size_t nbyte) {
 
 }
 
+int main(){
 
-
+	return 0;
+}
 
 
 

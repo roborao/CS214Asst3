@@ -38,7 +38,7 @@ int main(){
 	
 	while(1){
 	
-		int* sigIntHandlArg;
+		int* sigIntHandlArg = (int*)malloc(sizeof(int));
 		*sigIntHandlArg = accept(sock, (struct sockaddr*)&cli, &len); //accept the client request
 			
 		if (activeThr < BACKLOG){
@@ -60,13 +60,13 @@ int main(){
 	return 0;
 }
 
-void *sigIntHandler(void* cli){
+void* sigIntHandler(void* cli){
 
 	int* cliSockFD = (int*) cli;
 	
 	char action;
 	read(*cliSockFD, &action, 1);
-	int act = act - '0';
+	int act = action - '0';
 	
 	switch(act){
 		case 0:
@@ -82,6 +82,8 @@ void *sigIntHandler(void* cli){
 			lwrite(*cliSockFD);
 			break;
 	}
+	
+	return NULL;
 }
 
 void lopen(int socketFD){
@@ -94,7 +96,7 @@ void lopen(int socketFD){
 	read(socketFD, localfilepath, 99);
 	localfilepath[99] = '\0'; //null terminate the path name text
 
-	int err = open(localfilepath, perm);
+	int err = open(localfilepath, permissions);
 	
 	char buffer[5];
 	
@@ -110,7 +112,7 @@ void lopen(int socketFD){
 		int no = errno;
 		buffer[0] = '1';
 		
-		sprintf(buffer+1, "%d", errno);
+		sprintf(buffer+1, "%d", no);
 		write(socketFD, buffer, 5); //send errno back to client to report
 	}
 }
@@ -132,7 +134,6 @@ void lclose(int socketFD){
 	}
 	else{
 		sprintf(buffer, "%d", err);
-		itoa(err, buffer, 10);
 		write(socketFD, buffer, 4); //no error
 	}
 }
@@ -187,15 +188,15 @@ void lwrite(int socketFD){
 	
 	char errBuff[4];
 	if (err==-1){
-		itoa(errno, errBuff, 10);
+		sprintf(errBuff, "%d", errno);
 		write(socketFD, errBuff, 4); //send errno back to client to report
 	}
 	else{
-		itoa(err, errBuff, 10);
+		sprintf(errBuff, "%d", err);
 		write(socketFD, errBuff, 4); //no error
 		
 		char byteWrite[4];
-		itoa(err, byteWrite, 10);
+		sprintf(byteWrite, "%d", err);
 		write(socketFD, byteWrite, 4); //send to client number of bytes that were actually read by local read()
 	}
 

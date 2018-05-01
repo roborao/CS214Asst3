@@ -3,8 +3,8 @@
 #define BACKLOG 5 //queue size
 
 //functions
-void *sigIntHandler(void* cli);
 void lopen(int socketFD);
 void lclose(int socketFD);
 void lread(int socketFD);
 void lwrite(int socketFD);
+void* sigIntHandler(void* cli);
